@@ -212,9 +212,16 @@ class StockLSTMPredictor:
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
-    def create_sequences(self, data, target_col='close'):
-        """創建訓練序列"""
-        scaled_data = self.scaler.fit_transform(data)
+    def create_sequences(self, data, target_col='close', validation_split=None):
+        """創建訓練序列
+
+        validation_split 有值（訓練）：只用訓練段的列 fit scaler，避免驗證集極值洩漏。
+        validation_split 為 None（評估／預測）：只 transform，沿用已 fit 或已載入的 scaler。
+        """
+        if validation_split is not None:
+            split_idx = int((len(data) - self.sequence_length) * (1 - validation_split))
+            self.scaler.fit(data.iloc[:self.sequence_length + split_idx])
+        scaled_data = self.scaler.transform(data)
 
         X, y = [], []
         for i in range(self.sequence_length, len(scaled_data)):
@@ -295,7 +302,7 @@ class StockLSTMPredictor:
         try:
             # 準備資料
             features_df = self.prepare_features(stock_data)
-            X, y = self.create_sequences(features_df)
+            X, y = self.create_sequences(features_df, validation_split=validation_split)
 
             # 🔧 修復：智慧調整序列長度
             original_data_length = len(features_df)
@@ -304,7 +311,7 @@ class StockLSTMPredictor:
             while len(X) < 20 and self.sequence_length > 10:
                 self.sequence_length = max(10, self.sequence_length - 5)
                 logger.warning(f"⚠️ 調整序列長度為 {self.sequence_length} (原始資料: {original_data_length}天)")
-                X, y = self.create_sequences(features_df)
+                X, y = self.create_sequences(features_df, validation_split=validation_split)
             
             # 最終檢查 - 降低最低要求從20到10
             if len(X) < 10:
